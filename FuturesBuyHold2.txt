@@ -35,5 +35,5 @@ class CasualRedDinosaur(QCAlgorithm):
         self.znContract = self.Securities[self._continuousContractZN.Mapped]
         self.Debug(str(self.esContract.Symbol) + " " + str(self.znContract.Symbol))
 
-        self.SetHoldings([PortfolioTarget(self.esContract.Symbol, 0.03), PortfolioTarget(self.znContract.Symbol, 0.07)])
+        self.SetHoldings([PortfolioTarget(self.esContract.Symbol, 0.03), PortfolioTarget(self.znContract.Symbol, 0.07), PortfolioTarget("SPY", .9)])
 
