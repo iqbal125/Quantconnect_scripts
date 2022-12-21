@@ -1,0 +1,110 @@
+import pandas as pd
+from functools import partial
+from QuantConnect.Securities.Option import OptionPriceModels
+ 
+class ParticleCalibratedCoil(QCAlgorithm):
+ 
+    def Initialize(self):
+ 
+        '''
+            Parameters for adjusting
+        '''
+        self.numberOfLiquidStocks = 5 # Controls the number of stocks in play
+ 
+ 
+        '''
+            Backtesting variables
+        '''
+        self.SetWarmUp(43800)
+        self.SetStartDate(2019, 10, 18)
+        self.SetEndDate(2019, 12, 18)
+        self.SetCash(1000000)
+ 
+        '''
+            Algorithm variables
+        '''
+        self.UniverseSettings.Resolution = Resolution.Minute
+        self.AddUniverse(self.CoarseSelectionFilter)
+        self.SetSecurityInitializer(lambda x: x.SetDataNormalizationMode(DataNormalizationMode.Raw))
+ 
+        self.indicators = {}
+ 
+ 
+    def CoarseSelectionFilter(self, coarse):
+        '''
+            1. Sorts each element of the coarse object by dollar volume
+            2. Returns a list of coarse object, limited to top 100 highest volume
+            3. Returns a list of symbols we want to initialise into the algorithm
+        '''
+ 
+        self.sortedByDollarVolume = sorted(coarse, key=lambda c: c.DollarVolume, reverse=True)
+        self.topHundredMostLiquid = self.sortedByDollarVolume[:self.numberOfLiquidStocks]
+ 
+        return [stock.Symbol for stock in self.topHundredMostLiquid]
+ 
+    def OnSecuritiesChanged (self,changes):
+ 
+        '''
+            For any new securities added into the universe
+            If the security is an underlying
+            Subscribe to the option chains
+ 
+            For any securities we want removed from the universe
+            Remove the underlying and then remove the options
+ 
+            For each new secury added into the universe
+            If there is not yet one
+            Create a standard deviation indicator
+        '''
+        for underlying in changes.AddedSecurities:
+            if underlying.Symbol.SecurityType != SecurityType.Equity: continue
+            option = self.AddOption(underlying.Symbol.Value, Resolution.Minute)
+            option.SetFilter(-5, +2, timedelta(30), timedelta(60))
+            option.PriceModel = OptionPriceModels.CrankNicolsonFD()
+ 
+ 
+            if not underlying.Symbol.Value in self.indicators:
+                self.indicators[underlying.Symbol.Value] = \
+                  {"Volatility": self.STD(underlying.Symbol.Value, 252, Resolution.Daily)}
+                self.indicators[underlying.Symbol.Value]["AverageHV"] = \
+                  SimpleMovingAverage(365)
+ 
+                symbol = underlying.Symbol.Value
+                self.indicators[underlying.Symbol.Value]["Volatility"].Updated += partial(self.OnVolatility, symbol=symbol)
+ 
+        for underlying in changes.RemovedSecurities:
+            self.RemoveSecurity(underlying.Symbol)
+            for symbol in self.Securities.Keys:
+                if symbol.SecurityType == SecurityType.Option and symbol.Underlying == underlying.Symbol:
+                    self.RemoveSecurity(symbol)
+ 
+ 
+    def OnData(self, slice):
+ 
+        '''
+            For each OptionChain, the key is the underlying symbol object, while the
+            value is the option chain.
+            For each chain in OptionChains, each chain represents the entire chain of option contracts
+            for the underlying security.
+        '''
+ 
+        # This is where the index out of range happens
+        for chain in slice.OptionChains.Values:
+ 
+            # Filter for the first ATM contract
+            if chain != None:
+                atmContract = sorted(chain, key = lambda x: abs(x.UnderlyingLastPrice - x.Strike))[0]
+ 
+            impliedVolatility = atmContract.ImpliedVolatility
+            underlyingSymbol = atmContract.UnderlyingSymbol.Value
+            if self.indicators[underlyingSymbol]["AverageHV"].IsReady:
+                historicalVolatility = self.indicators[underlyingSymbol]["AverageHV"].Current.Value
+                self.Debug(f"underlyingSymbol has a implied volatility of {impliedVolatility}")
+                self.Debug(f"underlyingSymbol has a historical volatility of {historicalVolatility}")
+ 
+ 
+ 
+    # I'm unable to pipe an indicator into another (Trying to get the AverageHV into the dict)
+    def OnVolatility(self, sender, updated, symbol):
+        if self.indicators[symbol]["Volatility"].IsReady:
+            self.indicators[symbol]["AverageHV"].Update(self.Time, updated.Value)
