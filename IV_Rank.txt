@@ -1,0 +1,118 @@
+#region imports
+from AlgorithmImports import *
+#endregion
+import pandas as pd
+from functools import partial
+from QuantConnect.Securities.Option import OptionPriceModels
+ 
+class ParticleCalibratedCoil(QCAlgorithm):
+ 
+    def Initialize(self):
+ 
+        '''
+            Parameters for adjusting
+        '''
+        self.numberOfLiquidStocks = 5 # Controls the number of stocks in play
+ 
+ 
+        '''
+            Backtesting variables
+        '''
+        self.SetWarmUp(43800)
+        self.SetStartDate(2019, 10, 18)
+        self.SetEndDate(2019, 12, 18)
+        self.SetCash(1000000)
+ 
+        '''
+            Algorithm variables
+        '''
+        self.UniverseSettings.Resolution = Resolution.Daily
+        self.AddUniverse(self.CoarseSelectionFilter)
+        self.SetSecurityInitializer(lambda x: x.SetDataNormalizationMode(DataNormalizationMode.Raw))
+ 
+        self.data = {}
+ 
+ 
+    def CoarseSelectionFilter(self, coarse):
+        '''
+            1. Sorts each element of the coarse object by dollar volume
+            2. Returns a list of coarse object, limited to top 100 highest volume
+            3. Returns a list of symbols we want to initialise into the algorithm
+        '''
+ 
+        self.sortedByDollarVolume = sorted(coarse, key=lambda c: c.DollarVolume, reverse=True)
+        self.topHundredMostLiquid = self.sortedByDollarVolume[:self.numberOfLiquidStocks]
+ 
+        return [stock.Symbol for stock in self.topHundredMostLiquid]
+ 
+    def OnSecuritiesChanged (self,changes):
+ 
+        '''
+            For any new securities added into the universe
+            If the security is an underlying
+            Subscribe to the option chains
+ 
+            For any securities we want removed from the universe
+            Remove the underlying and then remove the options
+ 
+            For each new secury added into the universe
+            If there is not yet one
+            Create a standard deviation indicator
+        '''
+        for change in changes.AddedSecurities:
+            self.data[change.Symbol] = SymbolData(self, change.Symbol)
+ 
+        for change in changes.RemovedSecurities:
+            self.RemoveSecurity(change)
+ 
+ 
+ 
+    def OnData(self, data: Slice):
+ 
+        '''
+            For each OptionChain, the key is the underlying symbol object, while the
+            value is the option chain.
+            For each chain in OptionChains, each chain represents the entire chain of option contracts
+            for the underlying security.
+        '''
+ 
+        for key in data.Keys:
+            if key.Symbol not in self.data:
+                self.data[key.Symbol] = SymbolData(self, key.Symbol)
+            self.data[key.Symbol].Update(self.STD(key.Symbol, 252, Resolution.Daily))
+ 
+        topIVMetrics = self.IVMetrics()
+ 
+    def IVMetrics(self):
+        for key in self.data.keys():
+            pass
+ 
+class SymbolData(object):
+    def _init_(self, algorithm, symbol):
+        self.symbol = symbol
+        self.algorithm = algorithm
+        self.volWindow = RollingWindow[Decimal](252)
+        self.IVRank = 0
+        self.IVPercentile = 0
+ 
+    def Update(self, volatility):
+        self.volWindow.Add(volatility)
+ 
+        #IV Rank calculation
+        minimum = min(self.volWindow)
+        maximum = max(self.volWindow)
+        self.IVRank = (self.volWindow[0] - minimum) / (maximum - minimum)
+ 
+        #IV Percentile calculation
+        count = 0
+        currentVol = self.volWindow[0]
+        for x in self.volWindow:
+            if x < currentVol:
+                count += 1
+ 
+        self.IVPercentile = count / 252
+ 
+ 
+    def IsReady(self):
+        return len(self.volWindow) == 252
+ 
