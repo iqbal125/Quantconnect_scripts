@@ -2,6 +2,7 @@
 from AlgorithmImports import *
 #endregion
 import pandas as pd
+import operator
 from functools import partial
 from QuantConnect.Securities.Option import OptionPriceModels
  
@@ -12,15 +13,14 @@ class ParticleCalibratedCoil(QCAlgorithm):
         '''
             Parameters for adjusting
         '''
-        self.numberOfLiquidStocks = 5 # Controls the number of stocks in play
+        self.numberOfLiquidStocks = 100 # Controls the number of stocks in play
  
  
         '''
             Backtesting variables
         '''
-        self.SetWarmUp(43800)
         self.SetStartDate(2019, 10, 18)
-        self.SetEndDate(2019, 12, 18)
+        #self.SetEndDate(2019, 12, 18)
         self.SetCash(1000000)
  
         '''
@@ -39,7 +39,7 @@ class ParticleCalibratedCoil(QCAlgorithm):
             2. Returns a list of coarse object, limited to top 100 highest volume
             3. Returns a list of symbols we want to initialise into the algorithm
         '''
- 
+        coarse = [x for x in coarse if x.HasFundamentalData]
         self.sortedByDollarVolume = sorted(coarse, key=lambda c: c.DollarVolume, reverse=True)
         self.topHundredMostLiquid = self.sortedByDollarVolume[:self.numberOfLiquidStocks]
  
@@ -61,11 +61,12 @@ class ParticleCalibratedCoil(QCAlgorithm):
         '''
         for change in changes.AddedSecurities:
             self.data[change.Symbol] = SymbolData(self, change.Symbol)
+            #self.Debug("Added " + str(change.Symbol) + str(self.Time))
  
         for change in changes.RemovedSecurities:
-            self.RemoveSecurity(change)
- 
- 
+            self.RemoveSecurity(change.Symbol)
+            #self.Debug("Removed " + str(change.Symbol) + str(self.Time))
+            self.data.pop(change.Symbol)
  
     def OnData(self, data: Slice):
  
@@ -76,43 +77,47 @@ class ParticleCalibratedCoil(QCAlgorithm):
             for the underlying security.
         '''
  
-        for key in data.Keys:
-            if key.Symbol not in self.data:
-                self.data[key.Symbol] = SymbolData(self, key.Symbol)
-            self.data[key.Symbol].Update(self.STD(key.Symbol, 252, Resolution.Daily))
+        #self.Debug(len(self.data.values()))
+        readyStocks = [x for x in self.data.values() if x.ready]
+        #self.Debug(len(readyStocks))
  
-        topIVMetrics = self.IVMetrics()
+        topIVMetricStocks = sorted(readyStocks, key= lambda x: x.IVRank, reverse=True)[:5]
+        for x in topIVMetricStocks:
+            self.Debug(str(x.symbol) + " " + str(x.IVRank))
  
-    def IVMetrics(self):
-        for key in self.data.keys():
-            pass
  
 class SymbolData(object):
-    def _init_(self, algorithm, symbol):
+    def __init__(self, algorithm, symbol):
         self.symbol = symbol
         self.algorithm = algorithm
-        self.volWindow = RollingWindow[Decimal](252)
-        self.IVRank = 0
-        self.IVPercentile = 0
+        self.volatility = algorithm.STD(symbol, 252, Resolution.Daily)
+        self.volWindow = RollingWindow[float](252)
+        self.volatility.Updated += self.OnVolUpdated
+        self.ready = False
  
-    def Update(self, volatility):
-        self.volWindow.Add(volatility)
+    def OnVolUpdated(self, sender, updated):
  
-        #IV Rank calculation
-        minimum = min(self.volWindow)
-        maximum = max(self.volWindow)
-        self.IVRank = (self.volWindow[0] - minimum) / (maximum - minimum)
+        self.volWindow.Add(self.volatility.Current.Value)
  
-        #IV Percentile calculation
-        count = 0
-        currentVol = self.volWindow[0]
-        for x in self.volWindow:
-            if x < currentVol:
-                count += 1
+        if self.volatility.IsReady and self.volWindow.IsReady:
+            self.ready = True
+            #self.algorithm.Debug(str(self.symbol) + " " + str(self.algorithm.Time))
+        else:
+            self.ready = False
  
-        self.IVPercentile = count / 252
+        if self.ready == True:
+            #IV Rank calculation
+            minimum = min(self.volWindow)
+            maximum = max(self.volWindow)
+            #self.algorithm.Debug(str(self.symbol) + " " + str(minimum) + " " + str(maximum))
+            self.IVRank = (self.volWindow[0] - minimum) / (maximum - minimum)
  
+            #IV Percentile calculation
+            count = 0
+            currentVol = self.volWindow[0]
+            for x in self.volWindow:
+                if x < currentVol:
+                    count += 1
  
-    def IsReady(self):
-        return len(self.volWindow) == 252
+            self.IVPercentile = count / 252
  
