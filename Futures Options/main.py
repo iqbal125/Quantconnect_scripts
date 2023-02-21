@@ -32,9 +32,9 @@ class OptionsFuturesTemplate(QCAlgorithm):
         self.futureES = self.AddSecurity(SecurityType.Future, Futures.Indices.SP500EMini, Resolution.Hour)
         self.futureES.SetFilter(timedelta(0), timedelta(182))
         if self.right == OptionRight.Call:
-            self.AddFutureOption(self.futureES.Symbol, lambda option_filter_universe: option_filter_universe.Strikes(-3, 3).CallsOnly())            
+            self.AddFutureOption(self.futureES.Symbol, lambda option_filter_universe: option_filter_universe.Strikes(-3, 3).CallsOnly())
         else:
-            self.AddFutureOption(self.futureES.Symbol, lambda option_filter_universe: option_filter_universe.Strikes(-3, 3).PutsOnly())            
+            self.AddFutureOption(self.futureES.Symbol, lambda option_filter_universe: option_filter_universe.Strikes(-3, 3).PutsOnly())
         self.SetBenchmark(self.futureES.Symbol)
 
 
@@ -50,17 +50,18 @@ class OptionsFuturesTemplate(QCAlgorithm):
         self.rm_model = FixedTrailingStopRMModel(self, maximumDrawdownPercent=MAX_DRAWDOWN)
         self.AddRiskManagement(self.rm_model)
 
-    def OnData(self, slice):        
+    def OnData(self, slice):
         self.OnDataFuture(slice)
 
     def OnDataFuture(self,slice):
-        if self.Portfolio.Invested: 
+        if self.Portfolio.Invested:
             # If we are already invested, we'll wait for DTE to reach less or equal to Close DTE
             if (self.contract.Expiry - self.Time).days <= self.close_dte:
-                self.MarketOrder(self.contract.Symbol, 1,tag='Liquidated: Reached Target DTE')            
+                self.SetHoldings(symbol, PROPORTION, tag=f'Shorted/Long Contract with more than {self.sell_dte} DTE')
+                # self.MarketOrder(self.contract.Symbol, 1,tag='Liquidated: Reached Target DTE')
 
         else:
-            # Iterate through all option chains of all futures and 
+            # Iterate through all option chains of all futures and
             # select option which has minimum distance to Expiry of self.sell_dte
             for sym, chain in slice.OptionChains.items():
                 if chain:
@@ -68,7 +69,7 @@ class OptionsFuturesTemplate(QCAlgorithm):
 
                     # Filter and Sort on given criteria to get target contract
                     contracts = [x for x in chain if x.Right == self.right] # Filter Call or Puts
-                    contracts = filter(lambda x: target_date <= x.Expiry, contracts)                                    
+                    contracts = filter(lambda x: target_date <= x.Expiry, contracts)
                     contracts = sorted(contracts, key=lambda x: abs(x.Expiry - target_date)) # Filter Target Expiry
                     if len(contracts) == 0: continue
 
@@ -76,9 +77,10 @@ class OptionsFuturesTemplate(QCAlgorithm):
                     if(USE_IV): contracts = list(filter(lambda x: abs(x.ImpliedVolatility) > self.iv, contracts)) # Filter IV greater than target
                     if len(contracts) == 0: continue
                     self.contract = min(contracts, key=lambda x: abs(abs(x.Greeks.Delta) - float(self.delta))) # Get Near to Target Delta
-                                        
+
                     symbol = self.contract.Symbol
-                    self.MarketOrder(symbol, QUANTITY, tag=f'Shorted/Long Contract with more than {self.sell_dte} DTE')
+                    self.SetHoldings(symbol, PROPORTION, tag=f'Shorted/Long Contract with more than {self.sell_dte} DTE')
+                    # self.MarketOrder(symbol, QUANTITY, tag=f'Shorted/Long Contract with more than {self.sell_dte} DTE')
                     break
 
     def OnOrderEvent(self, orderEvent):
