@@ -31,17 +31,14 @@ class OptionsFuturesTemplate(QCAlgorithm):
         #Adding Instruments 
         self.futureES = self.AddSecurity(SecurityType.Future, Futures.Indices.SP500EMini, Resolution.Hour)
         self.futureES.SetFilter(timedelta(0), timedelta(182))
-        if self.right == OptionRight.Call:
-            self.AddFutureOption(self.futureES.Symbol, lambda option_filter_universe: option_filter_universe.Strikes(-3, 3).CallsOnly())
-        else:
-            self.AddFutureOption(self.futureES.Symbol, lambda option_filter_universe: option_filter_universe.Strikes(-3, 3).PutsOnly())
+
+        self.AddFutureOption(self.futureES.Symbol, lambda option_filter_universe: option_filter_universe.Strikes(-3, 3))
         self.SetBenchmark(self.futureES.Symbol)
 
 
     def AddParameters(self):
         self.sell_dte = SELL_DTE
         self.close_dte = CLOSE_DTE
-        self.right = OptionRight.Put
         self.delta = DELTA
         self.iv = IV
 
@@ -56,9 +53,9 @@ class OptionsFuturesTemplate(QCAlgorithm):
     def OnDataFuture(self,slice):
         if self.Portfolio.Invested:
             # If we are already invested, we'll wait for DTE to reach less or equal to Close DTE
-            if (self.contract.Expiry - self.Time).days <= self.close_dte:
-                self.SetHoldings(symbol, PROPORTION, tag=f'Shorted/Long Contract with more than {self.sell_dte} DTE')
-                # self.MarketOrder(self.contract.Symbol, 1,tag='Liquidated: Reached Target DTE')
+            if (self.call.Expiry - self.Time).days <= self.close_dte:
+                self.SetHoldings(self.call.Symbol, PROPORTION*-1, tag='Liquidated Call: Reached Target DTE')
+                self.SetHoldings(self.put.Symbol, PROPORTION*-1, tag='Liquidated Put: Reached Target DTE')
 
         else:
             # Iterate through all option chains of all futures and
@@ -68,7 +65,7 @@ class OptionsFuturesTemplate(QCAlgorithm):
                     target_date = self.Time + dt.timedelta(self.sell_dte)
 
                     # Filter and Sort on given criteria to get target contract
-                    contracts = [x for x in chain if x.Right == self.right] # Filter Call or Puts
+                    contracts = [x for x in chain if x.Right == OptionRight.Call] # Filter Call or Puts
                     contracts = filter(lambda x: target_date <= x.Expiry, contracts)
                     contracts = sorted(contracts, key=lambda x: abs(x.Expiry - target_date)) # Filter Target Expiry
                     if len(contracts) == 0: continue
@@ -76,11 +73,18 @@ class OptionsFuturesTemplate(QCAlgorithm):
                     contracts = [x for x in contracts if x.Expiry==contracts[0].Expiry]
                     if(USE_IV): contracts = list(filter(lambda x: abs(x.ImpliedVolatility) > self.iv, contracts)) # Filter IV greater than target
                     if len(contracts) == 0: continue
-                    self.contract = min(contracts, key=lambda x: abs(abs(x.Greeks.Delta) - float(self.delta))) # Get Near to Target Delta
+                    self.call = min(contracts, key=lambda x: abs(abs(x.Greeks.Delta) - float(self.delta))) # Get Near to Target Delta
 
-                    symbol = self.contract.Symbol
-                    self.SetHoldings(symbol, PROPORTION, tag=f'Shorted/Long Contract with more than {self.sell_dte} DTE')
-                    # self.MarketOrder(symbol, QUANTITY, tag=f'Shorted/Long Contract with more than {self.sell_dte} DTE')
+                    for i in chain:
+                        if i.Expiry == self.call.Expiry and i.Right == OptionRight.Put and i.Strike == self.call.Strike:
+                            self.put = i
+
+                    call_symbol = self.call.Symbol
+                    put_symbol = self.put.Symbol
+
+                    self.SetHoldings(call_symbol, PROPORTION, tag=f'Shorted/Long Call Contract with more than {self.sell_dte} DTE')
+                    self.SetHoldings(put_symbol, PROPORTION, tag=f'Shorted/Long Put Contract with more than {self.sell_dte} DTE')
+
                     break
 
     def OnOrderEvent(self, orderEvent):
