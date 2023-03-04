@@ -9,9 +9,10 @@ from QuantConnect.DataSource import *
 from constants import *
 import datetime as dt
 from risk_management import *
+from options import *
 #endregion
 
-class OptionsFuturesTemplate(QCAlgorithm):
+class OptionsEquitiesTemplate(QCAlgorithm):
 
     # ==================================================================================
     # Main entry point for the algo     
@@ -20,15 +21,14 @@ class OptionsFuturesTemplate(QCAlgorithm):
 
         # Set Parameters of the backtest 
         self.SetStartDate(STARTDATE_YEAR, STARTDATE_MONTH, STARTDATE_DAY)
-        #self.SetEndDate(END_DATE_YEAR, END_DATE_MONTH, END_DATE_DAY) # In case no end date is specified, backtest is run till more recent data
+        self.SetEndDate(END_DATE_YEAR, END_DATE_MONTH, END_DATE_DAY) # In case no end date is specified, backtest is run till more recent data
         self.SetCash(CASH)
 
         # We need to add options data for the given ticker
         self.ticker = TICKER
-        self.AddParameters()
-        self.AddModels()
+        #self.AddModels()
 
-        option = self.AddOption(self.ticker,Resolution.Hour)
+        option = self.AddOption(self.ticker, Resolution.Hour)
         self.option_symbol = option.Symbol
 
         # set our strike/expiry filter for this option chain
@@ -39,13 +39,6 @@ class OptionsFuturesTemplate(QCAlgorithm):
         # use the underlying equity as the benchmark
         self.SetBenchmark(self.ticker)
 
-    def AddParameters(self):
-        self.sell_dte = SELL_DTE
-        self.close_dte = CLOSE_DTE
-        self.right = OptionRight.Put
-        self.delta = DELTA
-        self.iv = IV
-
     def AddModels(self):
         self.StopType = 'fixed'
         self.rm_model = FixedTrailingStopRMModel(self, maximumDrawdownPercent=1.0)
@@ -55,28 +48,14 @@ class OptionsFuturesTemplate(QCAlgorithm):
         self.OnDataEquity(slice)
 
     def OnDataEquity(self,slice):
-        if self.Portfolio.Invested: 
-            # If we are already invested, we'll wait for DTE to reach less or equal to Close DTE
-            if (self.contract.Expiry - self.Time).days <= self.close_dte:
-                self.MarketOrder(self.contract.Symbol, 1,tag='Liquidated: Reached Target DTE')            
+        if self.Portfolio.Invested: return      
 
-        else:
-            # Get the Option Chain and search for option of Target Expiry and Delta
-            chain = slice.OptionChains.get(self.option_symbol)
-            if chain:
-                target_date = self.Time + dt.timedelta(self.sell_dte)            
-                contracts = [x for x in chain if x.Right == self.right] # Filter Call or Puts
-                contracts = filter(lambda x: target_date <= x.Expiry, contracts)                          
-                contracts = sorted(contracts, key=lambda x: abs(x.Expiry - target_date)) # Filter Target Expiry
-                if(USE_IV): contracts = list(filter(lambda x: abs(x.ImpliedVolatility) > self.iv, contracts)) # Filter IV greater than target
-                if len(contracts) == 0: return
-                contracts = [x for x in contracts if x.Expiry==contracts[0].Expiry]
-                self.contract = min(contracts, key=lambda x: abs(abs(x.Greeks.Delta) - float(self.delta))) # Filter Target Delta
-                
-                symbol = self.contract.Symbol
-                self.MarketOrder(symbol, QUANTITY)
+        # Get the Option Chain and search for option of Target Expiry and Delta
+        chain = slice.OptionChains.get(self.option_symbol)
+        if not chain: return
+
+        options.Simple(self, chain, 45, OptionRight.Call, 0.2)
+
 
     def OnOrderEvent(self, orderEvent):
         self.Log(f'{orderEvent}')
-       
-   
