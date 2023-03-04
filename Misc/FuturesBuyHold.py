@@ -1,13 +1,13 @@
 # region imports
-# region imports
 from AlgorithmImports import *
 # endregion
 
 class CasualRedDinosaur(QCAlgorithm):
 
     def Initialize(self):
-        self.SetStartDate(2022, 6, 9)  # Set Start Date
-        self.SetCash(1000000)  # Set Strategy Cash
+        self.SetStartDate(2015, 6, 9)  # Set Start Date
+        self.SetCash(100000)  # Set Strategy Cash
+        self.spy = self.AddEquity("SPY", Resolution.Daily)
 
         self._continuousContractES = self.AddFuture(Futures.Indices.SP500EMini,
                                                   dataNormalizationMode = DataNormalizationMode.BackwardsRatio,
@@ -20,17 +20,15 @@ class CasualRedDinosaur(QCAlgorithm):
                                                   contractDepthOffset = 0)
 
 
+        self.Schedule.On(self.DateRules.MonthStart("SPY"), self.TimeRules.AfterMarketOpen("SPY", 5), self.Rebalance)
+
     def OnData(self, data: Slice):
         pass
     
     def Rebalance(self):
-        if self.Portfolio.Invested:
-            self.Liquidate(self.esContract.Symbol)
-            self.Liquidate(self.znContract.Symbol)
+        self.Debug("Rebalance called at " + str(self.Time))
+        esContract = self.Securities[self._continuousContractES.Mapped]
+        znContract = self.Securities[self._continuousContractZN.Mapped]
 
-
-        self.esContract = self.Securities[self._continuousContractES.Mapped]
-        self.znContract = self.Securities[self._continuousContractZN.Mapped]
-
-        self.SetHoldings(self.esContract.Symbol)
-
+        self.SetHoldings(esContract.Symbol, .05)
+        # self.SetHoldings(znContract.Symbol, .7)
