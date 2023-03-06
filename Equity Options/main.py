@@ -9,17 +9,17 @@ from QuantConnect.DataSource import *
 from constants import *
 import datetime as dt
 from risk_management import *
-from options import *
+
 #endregion
 
 class OptionsEquitiesTemplate(QCAlgorithm):
-
+    from options_strategies import Simple
     # ==================================================================================
-    # Main entry point for the algo     
+    # Main entry point for the algo
     # ==================================================================================
     def Initialize(self):
 
-        # Set Parameters of the backtest 
+        # Set Parameters of the backtest
         self.SetStartDate(STARTDATE_YEAR, STARTDATE_MONTH, STARTDATE_DAY)
         self.SetEndDate(END_DATE_YEAR, END_DATE_MONTH, END_DATE_DAY) # In case no end date is specified, backtest is run till more recent data
         self.SetCash(CASH)
@@ -27,6 +27,7 @@ class OptionsEquitiesTemplate(QCAlgorithm):
         # We need to add options data for the given ticker
         self.ticker = TICKER
         #self.AddModels()
+        self.AddParameters()
 
         option = self.AddOption(self.ticker, Resolution.Hour)
         self.option_symbol = option.Symbol
@@ -39,22 +40,30 @@ class OptionsEquitiesTemplate(QCAlgorithm):
         # use the underlying equity as the benchmark
         self.SetBenchmark(self.ticker)
 
+    def AddParameters(self):
+        self.sell_dte = SELL_DTE
+        self.close_dte = CLOSE_DTE
+        self.right = OptionRight.Call
+        self.delta = DELTA
+        self.iv = IV
+
+
     def AddModels(self):
         self.StopType = 'fixed'
         self.rm_model = FixedTrailingStopRMModel(self, maximumDrawdownPercent=1.0)
         self.AddRiskManagement(self.rm_model)
 
-    def OnData(self, slice):        
+    def OnData(self, slice):
         self.OnDataEquity(slice)
 
     def OnDataEquity(self,slice):
-        if self.Portfolio.Invested: return      
+        if self.Portfolio.Invested: return
 
         # Get the Option Chain and search for option of Target Expiry and Delta
         chain = slice.OptionChains.get(self.option_symbol)
         if not chain: return
 
-        options.Simple(self, chain, 45, OptionRight.Call, 0.2)
+        self.Simple(chain, 45, OptionRight.Call, 0.2)
 
 
     def OnOrderEvent(self, orderEvent):

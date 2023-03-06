@@ -42,12 +42,12 @@ class FixedTrailingStopRMModel(RiskManagementModel):
 
             profitPercent = security.Holdings.UnrealizedProfitPercent # for example: 0.017
 
-            if self.algo.StopType == 'trailing':                
+            if self.algo.StopType == 'trailing':
 
                 # Add newly invested securities
                 value = self.anchors.get(symbol)
                 if value == None:
-                    newValue = profitPercent if profitPercent > 0 else 0 
+                    newValue = profitPercent if profitPercent > 0 else 0
                     self.anchors[symbol] = newValue # self.trailing[symbol] = 0
                     continue
 
@@ -59,7 +59,7 @@ class FixedTrailingStopRMModel(RiskManagementModel):
                 # value = 0
                 # profitPercent = 0.017
                 # self.trailing[symbol] = 0.017
-                
+
                 # If unrealized profit percent deviates from local max for more than affordable percentage
                 # if 0.017 < 0 - 0.02
                 threshold = value - self.maximumDrawdownPercent
@@ -70,7 +70,7 @@ class FixedTrailingStopRMModel(RiskManagementModel):
 
             if (profitPercent < stop_pct) or (profitPercent > target_pct):
                 # liquidate
-                
+
                 self.algo.Log('Liquidating as either stop-loss or target was hit')
                 riskAdjustedTargets.append(PortfolioTarget(symbol, 0))
 
