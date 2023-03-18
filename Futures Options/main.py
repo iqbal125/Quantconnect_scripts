@@ -29,7 +29,7 @@ class OptionsFuturesTemplate(QCAlgorithm):
         #self.AddModels()
 
         #Adding Instruments 
-        self.futureES = self.AddSecurity(SecurityType.Future, Futures.Indices., Resolution.Hour)
+        self.futureES = self.AddSecurity(SecurityType.Future, Futures.Indices.SP500EMini, Resolution.Hour)
         self.futureES.SetFilter(timedelta(0), timedelta(182))
 
         self.AddFutureOption(self.futureES.Symbol, lambda option_filter_universe: option_filter_universe.Strikes(-3, 3))
@@ -53,13 +53,9 @@ class OptionsFuturesTemplate(QCAlgorithm):
     def OnDataFuture(self,slice):
         if self.Portfolio.Invested: return
 
-        # Get the Option Chain and search for option of Target Expiry and Delta
-        chain = slice.OptionChains.get(self.option_symbol)
-        if not chain: return
-
-        self.Strangle(chain, 30, 0.2, 0.5)
+        for sym, chain in slice.OptionChains.items():
+            self.Strangle(chain, 30, 0.2, 0.05)
 
     def OnOrderEvent(self, orderEvent):
         self.Log(f'{orderEvent}')
-       
    
