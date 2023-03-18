@@ -122,4 +122,4 @@ class SymbolData(object):
             self.IVPercentile = count / 252
  
  
- #  if(USE_IV): contracts = list(filter(lambda x: abs(x.ImpliedVolatility) > self.iv, contracts))
+  # if(USE_IV): contracts = list(filter(lambda x: abs(x.ImpliedVolatility) > self.iv, contracts))
