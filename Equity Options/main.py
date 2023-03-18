@@ -8,12 +8,12 @@ from statistics import median
 from QuantConnect.DataSource import *
 from constants import *
 import datetime as dt
-from risk_management import *
+
 
 #endregion
 
 class OptionsEquitiesTemplate(QCAlgorithm):
-    from options_strategies import Simple
+    from options_strategies import Simple, Strangle
     # ==================================================================================
     # Main entry point for the algo
     # ==================================================================================
@@ -21,7 +21,7 @@ class OptionsEquitiesTemplate(QCAlgorithm):
 
         # Set Parameters of the backtest
         self.SetStartDate(STARTDATE_YEAR, STARTDATE_MONTH, STARTDATE_DAY)
-        self.SetEndDate(END_DATE_YEAR, END_DATE_MONTH, END_DATE_DAY) # In case no end date is specified, backtest is run till more recent data
+        # self.SetEndDate(END_DATE_YEAR, END_DATE_MONTH, END_DATE_DAY) # In case no end date is specified, backtest is run till more recent data
         self.SetCash(CASH)
 
         # We need to add options data for the given ticker
@@ -63,8 +63,9 @@ class OptionsEquitiesTemplate(QCAlgorithm):
         chain = slice.OptionChains.get(self.option_symbol)
         if not chain: return
 
-        self.Simple(chain, 45, OptionRight.Call, 0.2)
+        self.Strangle(chain, 30, 0.2, 0.5)
 
 
     def OnOrderEvent(self, orderEvent):
         self.Log(f'{orderEvent}')
+    
